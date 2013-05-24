@@ -1,0 +1,41 @@
+This is a problem solution kit for the labs exercises of the MFF CUNI
+course on "Algoritmy a jejich implementace".
+
+The tarball manifest:
+
+	README		This file
+	aim-run.c	Infrastructure for running your solution
+	aim.h		Image interface for your subroutine
+	exercise.c	Subroutine solving given problem, written by you
+	Makefile	Build/benchmark infrastructure
+	statistics.awk	Helper for processing benchmark results
+	test*.pbm	Test images for performance testing
+			(do not try to open the test16384.pbm file in any
+			image viewer!)
+
+The aim-run.c file is essentially equivalent to the previously provided
+template.c. The most interesting file is exercise.c, which is to provide
+the exercise() routine that performs the appropriate image transformation.
+When submitting your solution, send ONLY THE FILE exercise.c to <aim@ucw.cz>.
+
+
+Run `make` to build the binary executable: this will create two files:
+
+	aim-opt - optimized version suitable for production use
+	aim-dbg - unoptimized version suitable for debugging
+
+Run the binary as:
+	./aim-opt 1 test1024.pbm output.pbm
+	display output.pbm
+
+If you want to pass custom compiler flags, run it e.g. as:
+	make MYCFLAGS="-DLALALA ..."
+
+To get annotated assembly source, run `make exercise.s`.
+
+
+In order to benchmark your code the same way we will, run
+`make benchmark`. (We will do it on a slightly different Core2 CPU,
+however.) This will internally run your subroutine multiple times
+in row on the same image, however you must not take advantage of this
+in your code.
