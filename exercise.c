@@ -63,8 +63,8 @@
 //#define ACCESS_WORD_BITS (64)
 // ACCESS_WORD_BITS must be equal to (sizeof(AccessWordType) / CHAR_BIT)
 //#define ACCESS_BYTES (2)
-//#define ACCESS_BYTES (8)
-#define ACCESS_BYTES (16)
+#define ACCESS_BYTES (8)
+//#define ACCESS_BYTES (16)
 // ACCESS_BYTES must be a multiple of sizeof(AccessWordType)
 
 // Automatic:
@@ -195,6 +195,16 @@ AccessType encode(const AccessType n)
 	return result;
 }
 
+static inline
+AccessType shuffle_10_00(const AccessType vec0, const AccessType vec1) {
+	return (AccessType){vec1[0], vec0[0]};
+}
+
+static inline
+AccessType shuffle_11_01(const AccessType vec0, const AccessType vec1) {
+	return (AccessType){vec1[1], vec0[1]};
+}
+
 static inline __attribute__((hot))
 void rotate_part_atomic(
 	const AccessType * const restrict in, AccessType * const restrict out,
@@ -242,17 +252,18 @@ void rotate_part_atomic(
 #endif // OPT_GET_CACHE
 		}
 		AccessType mid_data[ACCESS_WORDS];
-		mid_data[0] = __builtin_shuffle(get_data[0], get_data[1], {2, 0});
-		mid_data[1] = __builtin_shuffle(get_data[0], get_data[1], {3, 1});
+		mid_data[0] = shuffle_10_00(get_data[0], get_data[1]);
+		mid_data[1] = shuffle_11_01(get_data[0], get_data[1]);
 		for (unsigned int get_x = 0; get_x < ACCESS_WORD_BITS; get_x++) {
 			unsigned int put_y = get_x;
-			AccessType put_data[ACCESS_WORDS];
 			for (unsigned int i = 0; i < ACCESS_WORDS; i++) {
+				AccessType put_data[ACCESS_WORDS];
 				put_data[i] = mid_data[i];
 				put_data[i] = put_data[i] >> (ACCESS_WORD_BITS - 1 - get_x);
 				put_data[i] = put_data[i] & ACCESS_ONE;
 				put_data[i] = put_data[i] << (ACCESS_WORD_BITS - 1 - put_x);
 				put_rows[put_y + (i * ACCESS_WORD_BITS)] |= put_data[i];
+				// TODO: Fix: put_data[1] seems to be always wrong (near empty)
 			}
 		}
 	}
