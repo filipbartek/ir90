@@ -1,19 +1,21 @@
 # Compilation settings:
-CFLAGS=-Wall -std=gnu99 -I/usr/include/netpbm $(MYCFLAGS)
-LDFLAGS=-lm -lnetpbm $(MYLDFLAGS)
+CFLAGS=-Wall -std=gnu99 -I/usr/include/netpbm -fopenmp $(MYCFLAGS)
+LDFLAGS=-lm -lnetpbm -pthread $(MYLDFLAGS)
 
 OPTCFLAGS=$(CFLAGS) -O3 -march=native -DNDEBUG
-DBGCFLAGS=$(CFLAGS) -ggdb3
+DBGCFLAGS=$(CFLAGS) -ggdb3 -msse
 
 # Benchmarking settings:
 RUNS=4
 ITERS=20
 
+# Hamming distance:
+COMPARE=./hamming
 
 ######
 
 
-.PHONY: all clean benchmark evaluate asm
+.PHONY: all clean benchmark evaluate asm test
 all: aim-opt aim-dbg
 
 
@@ -52,3 +54,11 @@ evaluate: aim-opt
 	for s in 64 1024; do ./aim-opt 1 test$$s.pbm output.pbm; done >/dev/null
 	# Consider the optimistic estimate
 	make -s benchmark | { read m o p s; echo $$m $$o $$p $$s >&2; echo $$o; }
+
+test: aim-opt
+	./aim-opt 1 test1024.pbm test1024-out.pbm
+	$(COMPARE) 1 test1024-out.pbm r1024.pbm
+	./aim-opt 1 test64.pbm test64-out.pbm
+	$(COMPARE) 1 test64-out.pbm test64-ref.pbm
+	./aim-opt 1 test16384.pbm test16384-out.pbm
+	$(COMPARE) 1 test16384-out.pbm test16384-ref.pbm
