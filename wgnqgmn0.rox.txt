@@ -1,0 +1,31 @@
+This implementation is correct and worth 4 points.
+
+
+Result from aim@kam.mff.cuni.cz:
+
+exercise.c:227:1: warning: ‘rotate_part_large’ defined but not used [-Wunused-function]
+
+top - 16:59:52 up 59 days, 20:12,  0 users,  load average: 0.40, 0.10, 0.07
+Tasks: 106 total,   1 running, 105 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+KiB Mem:  16363680 total, 16143128 used,   220552 free,   139552 buffers
+KiB Swap:        0 total,        0 used,        0 free, 15457296 cached
+
+>>> Will compute time needed for 20 iterations averaged over 4 runs.
+>>> The measured mean time, its probable lower and upper bounds and S.D.
+>>> are printed out. See the header of statistics.awk for details.
+=1.603
+=1.639
+=1.629
+=1.647
+1.6295 1.61036 1.64864 0.0191398 6.518 4
+** RESULT: ** Performance 1.6295, resulting in 4 points.
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+# On branch master
+# Changes to be committed:
+#   (use "git reset HEAD <file>..." to unstage)
+#
+#	modified:   exercise.c
+#
+
