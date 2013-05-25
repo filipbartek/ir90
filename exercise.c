@@ -33,6 +33,9 @@
 #define OPT_OMP_LARGE
 #define OPT_OMP_SMALL_Y
 #define OPT_OMP_SMALL_X
+//#define USE_BSWAP_ENDIAN_H
+#define USE_BSWAP_BUILTIN
+//#define USE_BSWAP_OWN
 
 //#define AREA_SMALL_DIM (2 * 4096)
 // benchmark: 5.94075
@@ -72,42 +75,65 @@
 //assert(ACCESS_WORD_BITS % BYTE_BITS == 0);
 #define ACCESS_WORD_BYTES (ACCESS_WORD_BITS / BYTE_BITS)
 
-// Define access_htobe and access_betoh
+// Define AccessWordType, access_word_decode and access_word_encode
 #if (ACCESS_WORD_BITS == 8)
 typedef uint8_t AccessWordType;
-#define access_htobe
-#define access_betoh
+#define access_word_decode
+#define access_word_encode
 #elif (ACCESS_WORD_BITS == 16)
 typedef uint16_t AccessWordType;
-#define access_htobe htobe16
-#define access_betoh be16toh
+#ifdef USE_BSWAP_ENDIAN_H
+#define access_word_decode htobe16
+#define access_word_encode be16toh
+#elif defined USE_BSWAP_BUILTIN
+#define access_word_decode __builtin_bswap16
+#define access_word_encode __builtin_bswap16
+#else // USE_BSWAP_* (16 bits)
+#error Unsupported bswap for 16 bit words.
+#endif // USE_BSWAP_* (16 bits)
 #elif (ACCESS_WORD_BITS == 32)
 typedef uint32_t AccessWordType;
-#define access_htobe htobe32
-#define access_betoh be32toh
+#ifdef USE_BSWAP_ENDIAN_H
+#define access_word_decode htobe32
+#define access_word_encode be32toh
+#elif defined USE_BSWAP_BUILTIN
+#define access_word_decode __builtin_bswap32
+#define access_word_encode __builtin_bswap32
+#else // USE_BSWAP_* (32 bits)
+static inline __attribute__((hot))
+AccessWordType access_word_bswap(const AccessWordType word) {
+	return (word << 24) | ((word << 8) & 0x00ff0000)
+		| ((word >> 8) & 0x0000ff00) | (word >> 24);
+}
+#define access_word_decode access_word_bswap
+#define access_word_encode access_word_bswap
+#endif // USE_BSWAP_* (32 bits)
 #elif (ACCESS_WORD_BITS == 64)
 typedef uint64_t AccessWordType;
-#define access_htobe htobe64
-#define access_betoh be64toh
-#else
+#ifdef USE_BSWAP_ENDIAN_H
+#define access_word_decode htobe64
+#define access_word_encode be64toh
+#elif defined USE_BSWAP_BUILTIN
+#define access_word_decode __builtin_bswap64
+#define access_word_encode __builtin_bswap64
+#else // USE_BSWAP_* (64 bits)
+static inline __attribute__((hot))
+AccessWordType access_word_bswap(const AccessWordType word) {
+	return ((((word) & 0xff00000000000000ull) >> 56)
+          | (((word) & 0x00ff000000000000ull) >> 40)
+          | (((word) & 0x0000ff0000000000ull) >> 24)
+          | (((word) & 0x000000ff00000000ull) >>  8)
+          | (((word) & 0x00000000ff000000ull) <<  8)
+          | (((word) & 0x0000000000ff0000ull) << 24)
+          | (((word) & 0x000000000000ff00ull) << 40)
+          | (((word) & 0x00000000000000ffull) << 56));
+}
+#define access_word_decode access_word_bswap
+#define access_word_encode access_word_bswap
+#endif // USE_BSWAP_* (64 bits)
+#else // (ACCESS_WORD_BITS == *)
 #error Unsupported ACCESS_WORD_BITS; must be 8, 16, 32 or 64.
-#endif
-
-#if (ACCESS_WORD_BYTES == 1)
-#define access_htobe
-#define access_betoh
-#elif (ACCESS_WORD_BYTES == 2)
-#define access_htobe htobe16
-#define access_betoh be16toh
-#elif (ACCESS_WORD_BYTES == 4)
-#define access_htobe htobe32
-#define access_betoh be32toh
-#elif (ACCESS_WORD_BYTES == 8)
-#define access_htobe htobe64
-#define access_betoh be64toh
-#else
-#error Unsupported ACCESS_WORD_BYTES; must be 2, 4 or 8.
-#endif
+#endif // (ACCESS_WORD_BITS == *)
 
 typedef __attribute__((aligned(ACCESS_BYTES), vector_size(ACCESS_BYTES)))
 	AccessWordType AccessType;
@@ -127,55 +153,11 @@ static const AccessType ACCESS_ZERO = {0, 0};
 #elif (ACCESS_WORDS == 4)
 static const AccessType ACCESS_ONE = {1, 1, 1, 1};
 static const AccessType ACCESS_ZERO = {0, 0, 0, 0};
-#else
+#else // (ACCESS_WORDS == *)
 #error Unsupported ACCESS_WORDS; must be 1, 2 or 4.
-#endif
+#endif // (ACCESS_WORDS == *)
 
-static inline __attribute__((hot))
-AccessWordType access_word_decode(const AccessWordType word)
-{
-#if (ACCESS_WORD_BITS == 32)
-	return __builtin_bswap32(word);
-	/*return (word << 24) | ((word << 8) & 0x00ff0000)
-		| ((word >> 8) & 0x0000ff00) | (word >> 24);*/
-#elif (ACCESS_WORD_BITS == 64)
-	return __builtin_bswap64(word);
-	/*return ((((word) & 0xff00000000000000ull) >> 56)
-          | (((word) & 0x00ff000000000000ull) >> 40)
-          | (((word) & 0x0000ff0000000000ull) >> 24)
-          | (((word) & 0x000000ff00000000ull) >>  8)
-          | (((word) & 0x00000000ff000000ull) <<  8)
-          | (((word) & 0x0000000000ff0000ull) << 24)
-          | (((word) & 0x000000000000ff00ull) << 40)
-          | (((word) & 0x00000000000000ffull) << 56));*/
-#else
-	return access_htobe(word);
-#endif
-}
-
-static inline __attribute__((hot))
-AccessWordType access_word_encode(const AccessWordType word)
-{
-#if (ACCESS_WORD_BITS == 32)
-	return __builtin_bswap32(word);
-	/*return (word << 24) | ((word << 8) & 0x00ff0000)
-		| ((word >> 8) & 0x0000ff00) | (word >> 24);*/
-#elif (ACCESS_WORD_BITS == 64)
-	return __builtin_bswap64(word);
-	/*return ((((word) & 0xff00000000000000ull) >> 56)
-          | (((word) & 0x00ff000000000000ull) >> 40)
-          | (((word) & 0x0000ff0000000000ull) >> 24)
-          | (((word) & 0x000000ff00000000ull) >>  8)
-          | (((word) & 0x00000000ff000000ull) <<  8)
-          | (((word) & 0x0000000000ff0000ull) << 24)
-          | (((word) & 0x000000000000ff00ull) << 40)
-          | (((word) & 0x00000000000000ffull) << 56));*/
-#else
-	return access_betoh(word);
-#endif
-}
-
-static inline __attribute__((hot))
+static inline __attribute__((hot, optimize("unroll-loops")))
 AccessType decode(const AccessType n)
 {
 	AccessType result;
@@ -185,7 +167,7 @@ AccessType decode(const AccessType n)
 	return result;
 }
 
-static inline __attribute__((hot))
+static inline __attribute__((hot, optimize("unroll-loops")))
 AccessType encode(const AccessType n)
 {
 	AccessType result;
@@ -278,7 +260,7 @@ void rotate_part_atomic(
 		}
 		putchar('\n');*/
 	}
-#else
+#else // (ACCESS_WORDS == 2)
 	for (unsigned int put_y = 0; put_y < ACCESS_BITS; put_y++) {
 		AccessType put_data_access = ACCESS_ZERO;
 		unsigned int get_x = put_y;
@@ -304,7 +286,7 @@ void rotate_part_atomic(
 		out[(out_y * ACCESS_BITS + put_y) * rowwidth + out_x] =
 			encode(put_data_access);
 	}
-#endif
+#endif // (ACCESS_WORDS == 2)
 }
 
 static inline void
