@@ -17,23 +17,29 @@
 #define VARIANT_ACCESS
 
 #define OPT_LARGE
+//#define OPT_LARGE_HALF // BROKEN
+#define OPT_LARGE_LINEAR
 #define OPT_OMP_LARGE
-#define OPT_OMP_SMALL_Y
-#define OPT_OMP_SMALL_X
+#define OPT_OMP_LARGE_Y
+#define OPT_OMP_LARGE_X
+//#define OPT_OMP_SMALL_Y
+//#define OPT_OMP_SMALL_X
 
-//#define AREA_SMALL_DIM 4096
+#define AREA_SMALL_DIM (4096)
+// 6.31625
 // up: too much
 // down: small enough
-#define AREA_SMALL_DIM (2048)
-//#define AREA_SMALL_DIM 1024
+//#define AREA_SMALL_DIM (2048)
+//#define AREA_SMALL_DIM (1024)
+// 6.47275
 //#define AREA_SMALL_DIM 512
 // 2.351
 //#define AREA_SMALL_DIM 256
 // 2.318 2.300
 //#define AREA_SMALL_DIM 128
 // 2.338
-//#define AREA_SMALL_DIM 64
-// 2.358
+//#define AREA_SMALL_DIM (64)
+// 6.96175
 //#define AREA_SMALL_DIM 32
 // 2.477
 #define AREA_SMALL (AREA_SMALL_DIM * AREA_SMALL_DIM)
@@ -204,7 +210,7 @@ rotate_part_small(
 #endif // OPT_OMP_SMALL_Y
 	for (unsigned int y = 0; y < height; y++) {
 		unsigned int sub_in_y = in_y + y;
-		unsigned int sub_out_x = out_x + width - 1 - y;
+		unsigned int sub_out_x = out_x + height - 1 - y;
 #ifdef OPT_OMP_SMALL_X
 #pragma omp parallel for
 #endif // OPT_OMP_SMALL_X
@@ -224,25 +230,106 @@ rotate_part_large(
 	const unsigned int rowwidth,
 	const unsigned int in_x, const unsigned int in_y,
 	const unsigned int out_x, const unsigned int out_y,
-	const unsigned int width, const unsigned int height)
+	const unsigned int /*in_*/width, const unsigned int /*in_*/height)
 {
-	// unsigned int arguments' unit is uint32_t
+	//printf("%u %u %u %u %u %u\n", in_x, in_y, out_x, out_y, width, height);
+	//printf("%u %u\n", width * height, ACCESS_AREA_SMALL);
 	if (width * height <= ACCESS_AREA_SMALL) { // small
 		rotate_part_small(in, out, rowwidth, in_x, in_y, out_x, out_y,
 			width, height);
 	} else { // large
+#ifdef OPT_LARGE_LINEAR
+		assert(AREA_SMALL_DIM % ACCESS_BITS == 0);
+		const unsigned int sub_height = AREA_SMALL_DIM / ACCESS_BITS;
+		const unsigned int sub_width = AREA_SMALL_DIM / ACCESS_BITS;
+		assert(height % sub_height == 0);
+		assert(width % sub_width == 0);
+#ifdef OPT_OMP_LARGE_Y
+#pragma omp parallel for
+#endif // OPT_OMP_LARGE_Y
+		for (unsigned int y = 0; y < height; y += sub_height) {
+			unsigned int sub_in_y = in_y + y;
+			unsigned int sub_out_x = out_x + height - sub_height - y;
+#ifdef OPT_OMP_LARGE_X
+#pragma omp parallel for
+#endif // OPT_OMP_LARGE_X
+			for (unsigned int x = 0; x < width; x += sub_width) {
+				unsigned int sub_in_x = in_x + x;
+				unsigned int sub_out_y = out_y + x;
+				rotate_part_small(in, out, rowwidth, sub_in_x, sub_in_y,
+					sub_out_x, sub_out_y, sub_width, sub_height);
+			}
+		}
+#else // OPT_LARGE_LINEAR
+#ifdef OPT_LARGE_HALF // (divide into halves)
+		if (width > height) { // vertical cut
+			assert(width % 2 == 0);
+			const unsigned int sub_width = width / 2;
+			const unsigned int sub_height = height;
+
+			const unsigned int sub_in_y = in_y;
+			const unsigned int sub_out_x = out_x;
+
+			unsigned int sub_in_x = 0;
+			unsigned int sub_out_y = 0;
+#ifdef OPT_OMP_LARGE
+#pragma omp parallel for
+#endif // OPT_OMP_LARGE
+			for (unsigned int part = 0; part < 2; part++) {
+				switch (part) {
+					case 0: // left
+						sub_in_x = in_x;
+						sub_out_y = out_y;
+						break;
+					case 1: // right
+						sub_in_x = in_x + sub_width;
+						sub_out_y = out_y + sub_width;
+						break;
+				}
+				rotate_part_large(in, out, rowwidth, sub_in_x, sub_in_y,
+					sub_out_x, sub_out_y, sub_width, sub_height);
+			}
+		} else { // horizontal cut
+			assert(height % 2 == 0);
+			const unsigned int sub_height = height / 2;
+			const unsigned int sub_width = width;
+
+			const unsigned int sub_in_x = in_x;
+			const unsigned int sub_out_y = out_y;
+
+			unsigned int sub_in_y = 0;
+			unsigned int sub_out_x = 0;
+#ifdef OPT_OMP_LARGE
+#pragma omp parallel for
+#endif // OPT_OMP_LARGE
+			for (unsigned int part = 0; part < 2; part++) {
+				switch (part) {
+					case 0: // top
+						sub_in_y = in_y;
+						sub_out_x = out_x;
+						break;
+					case 1: // bottom
+						sub_in_y = in_y + sub_height;
+						sub_out_x = out_x + sub_height;
+						break;
+				}
+				rotate_part_large(in, out, rowwidth, sub_in_x, sub_in_y,
+					sub_out_x, sub_out_y, sub_width, sub_height);
+			}
+		}
+#else // OPT_LARGE_HALF (divide into quarters)
 		assert(width % 2 == 0);
 		assert(height % 2 == 0);
 		const unsigned int sub_width = width / 2;
 		const unsigned int sub_height = height / 2;
+		unsigned int sub_in_x = 0;
+		unsigned int sub_in_y = 0;
+		unsigned int sub_out_x = 0;
+		unsigned int sub_out_y = 0;
 #ifdef OPT_OMP_LARGE
 #pragma omp parallel for
 #endif // OPT_OMP_LARGE
 		for (unsigned int quarter = 0; quarter < 4; quarter++) {
-			unsigned int sub_in_x = 0;
-			unsigned int sub_in_y = 0;
-			unsigned int sub_out_x = 0;
-			unsigned int sub_out_y = 0;
 			switch (quarter) {
 				case 0:
 					sub_in_x = in_x;
@@ -272,6 +359,8 @@ rotate_part_large(
 			rotate_part_large(in, out, rowwidth, sub_in_x, sub_in_y,
 				sub_out_x, sub_out_y, sub_width, sub_height);
 		}
+#endif // OPT_LARGE_HALF
+#endif // OPT_LARGE_LINEAR
 	}
 }
 #endif // OPT_LARGE
@@ -297,11 +386,11 @@ exercise(struct image * restrict in, struct image * restrict out)
 	assert(image_rowbytes(in) % ACCESS_BYTES == 0);
 	const unsigned int rowwidth_access = image_rowbytes(in) / ACCESS_BYTES;
 
-	assert(in->cols == out->cols);
+	assert(in->cols == out->rows);
 	assert(in->cols % ACCESS_BITS == 0);
 	const unsigned int width_access = in->cols / ACCESS_BITS;
 
-	assert(in->rows == out->rows);
+	assert(in->rows == out->cols);
 	assert(in->rows % ACCESS_BITS == 0);
 	const unsigned int height_access = in->rows / ACCESS_BITS;
 
@@ -312,6 +401,5 @@ exercise(struct image * restrict in, struct image * restrict out)
 	rotate_part_small(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
 		width_access, height_access);
 #endif // OPT_LARGE
-	// TODO Tweak small / large - divide parts between cores efficiently.
 #endif // VARIANT_ACCESS
 }
