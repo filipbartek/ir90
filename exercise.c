@@ -16,21 +16,26 @@
 //#define VARIANT_32
 #define VARIANT_ACCESS
 
-#define OPT_LARGE
+#define OPT_STRIPS
+#define OPT_STRIPS_HOR (8)
+#define OPT_STRIPS_VER (1)
+//#define OPT_LARGE
 //#define OPT_LARGE_HALF // BROKEN
 #define OPT_LARGE_LINEAR
-#define OPT_OMP_LARGE
+#define OPT_OMP_STRIPS_Y
+//#define OPT_OMP_STRIPS_X
+//#define OPT_OMP_LARGE
 #define OPT_OMP_LARGE_Y
 #define OPT_OMP_LARGE_X
 //#define OPT_OMP_SMALL_Y
 //#define OPT_OMP_SMALL_X
 
-#define AREA_SMALL_DIM (4096)
+//#define AREA_SMALL_DIM (4096)
 // 6.31625
 // up: too much
 // down: small enough
 //#define AREA_SMALL_DIM (2048)
-//#define AREA_SMALL_DIM (1024)
+#define AREA_SMALL_DIM (1024)
 // 6.47275
 //#define AREA_SMALL_DIM 512
 // 2.351
@@ -197,8 +202,8 @@ void rotate_part_atomic(
 	}
 }
 
-static inline void
-rotate_part_small(
+static inline
+void rotate_part_small(
 	const AccessType * const restrict in, AccessType * const restrict out,
 	const unsigned int rowwidth,
 	const unsigned int in_x, const unsigned int in_y,
@@ -224,8 +229,8 @@ rotate_part_small(
 }
 
 #ifdef OPT_LARGE
-static void
-rotate_part_large(
+static inline
+void rotate_part_large(
 	const AccessType * const restrict in, AccessType * const restrict out,
 	const unsigned int rowwidth,
 	const unsigned int in_x, const unsigned int in_y,
@@ -365,6 +370,48 @@ rotate_part_large(
 }
 #endif // OPT_LARGE
 
+#ifdef OPT_STRIPS
+static inline
+void rotate_part_strips(
+	const AccessType * const restrict in, AccessType * const restrict out,
+	const unsigned int rowwidth,
+	const unsigned int in_x, const unsigned int in_y,
+	const unsigned int out_x, const unsigned int out_y,
+	const unsigned int /*in_*/width, const unsigned int /*in_*/height)
+{
+	if (width / OPT_STRIPS_VER < 1 || height / OPT_STRIPS_HOR < 1) { // small
+		rotate_part_small(in, out, rowwidth, in_x, in_y, out_x, out_y,
+			width, height);
+	} else { // strips
+		assert(height % OPT_STRIPS_HOR == 0);
+		const unsigned int sub_height = height / OPT_STRIPS_HOR;
+		assert(width % OPT_STRIPS_VER == 0);
+		const unsigned int sub_width = width / OPT_STRIPS_VER;
+#ifdef OPT_OMP_STRIPS_Y
+#pragma omp parallel for
+#endif // OPT_OMP_STRIPS_Y
+		for (unsigned int y = 0; y < height; y += sub_height) {
+			unsigned int sub_in_y = in_y + y;
+			unsigned int sub_out_x = out_x + height - sub_height - y;
+#ifdef OPT_OMP_STRIPS_X
+#pragma omp parallel for
+#endif // OPT_OMP_STRIPS_X
+			for (unsigned int x = 0; x < width; x += sub_width) {
+				unsigned int sub_in_x = in_x + x;
+				unsigned int sub_out_y = out_y + x;
+#ifdef OPT_LARGE
+				rotate_part_large(in, out, rowwidth, sub_in_x, sub_in_y,
+					sub_out_x, sub_out_y, sub_width, sub_height);
+#else // OPT_LARGE (small)
+				rotate_part_small(in, out, rowwidth, sub_in_x, sub_in_y,
+					sub_out_x, sub_out_y, sub_width, sub_height);
+#endif // OPT_LARGE
+			}
+		}
+	}
+}
+#endif // OPT_STRIPS
+
 #endif // VARIANT_ACCESS
 
 void
@@ -394,12 +441,15 @@ exercise(struct image * restrict in, struct image * restrict out)
 	assert(in->rows % ACCESS_BITS == 0);
 	const unsigned int height_access = in->rows / ACCESS_BITS;
 
-#ifdef OPT_LARGE
+#ifdef OPT_STRIPS
+	rotate_part_strips(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
+		width_access, height_access);
+#elif defined OPT_LARGE
 	rotate_part_large(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
 		width_access, height_access);
-#else // OPT_LARGE
+#else // OPT_* (small)
 	rotate_part_small(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
 		width_access, height_access);
-#endif // OPT_LARGE
+#endif // OPT_*
 #endif // VARIANT_ACCESS
 }
