@@ -62,12 +62,14 @@
 // User defined:
 //typedef uint32_t AccessWordType;
 //#define ACCESS_WORD_BITS (8)
-#define ACCESS_WORD_BITS (32)
-//#define ACCESS_WORD_BITS (64)
+//#define ACCESS_WORD_BITS (32)
+#define ACCESS_WORD_BITS (64)
 // ACCESS_WORD_BITS must be equal to (sizeof(AccessWordType) / CHAR_BIT)
 //#define ACCESS_BYTES (2)
 #define ACCESS_BYTES (8)
 //#define ACCESS_BYTES (16)
+// 16 byte vectors fail throwing a SIGSEGV
+// This is probably because the out memory is not aligned to 16 bytes
 // ACCESS_BYTES must be a multiple of sizeof(AccessWordType)
 
 // Automatic:
@@ -153,9 +155,14 @@ static const AccessType ACCESS_ZERO = {0, 0};
 #elif (ACCESS_WORDS == 4)
 static const AccessType ACCESS_ONE = {1, 1, 1, 1};
 static const AccessType ACCESS_ZERO = {0, 0, 0, 0};
+#elif (ACCESS_WORDS == 8)
+static const AccessType ACCESS_ONE = {1, 1, 1, 1, 1, 1, 1, 1};
+static const AccessType ACCESS_ZERO = {0, 0, 0, 0, 0, 0, 0, 0};
 #else // (ACCESS_WORDS == *)
-#error Unsupported ACCESS_WORDS; must be 1, 2 or 4.
+#error Unsupported ACCESS_WORDS; must be 1, 2, 4 or 8.
 #endif // (ACCESS_WORDS == *)
+
+typedef AccessType AccessIntegers;
 
 static inline __attribute__((hot, optimize("unroll-loops")))
 AccessType decode(const AccessType n)
@@ -177,15 +184,17 @@ AccessType encode(const AccessType n)
 	return result;
 }
 
-static inline
+#if (ACCESS_WORDS == 2)
+static inline __attribute__((hot))
 AccessType shuffle_10_00(const AccessType vec0, const AccessType vec1) {
 	return (AccessType){vec1[0], vec0[0]};
 }
 
-static inline
+static inline __attribute__((hot))
 AccessType shuffle_11_01(const AccessType vec0, const AccessType vec1) {
 	return (AccessType){vec1[1], vec0[1]};
 }
+#endif // (ACCESS_WORDS == 2)
 
 static inline __attribute__((hot))
 void rotate_part_atomic(
@@ -200,31 +209,34 @@ void rotate_part_atomic(
 		get_rows[y] = decode(in[(in_y * ACCESS_BITS + y) * rowwidth + in_x]);
 	}
 #endif // OPT_GET_CACHE
-	/*for (unsigned int get_y = 0; get_y < ACCESS_BITS; get_y++) {
-		unsigned int put_x = ACCESS_BITS - 1 - get_y;
-		unsigned int put_word = put_x / ACCESS_WORD_BITS;
-		unsigned int put_bit = put_x % ACCESS_WORD_BITS;
-		AccessType get_data_row = decode(in[(in_y * ACCESS_BITS + get_y) *
-			rowwidth + in_x]);
-		for (unsigned int get_x = 0; get_x < ACCESS_BITS; get_x++) {
-			unsigned int put_y = get_x;
-			unsigned int get_word = get_x / ACCESS_WORD_BITS;
-			unsigned int get_bit = get_x % ACCESS_WORD_BITS;
-			AccessWordType get_data = (get_data_row[get_word] >>
-				(ACCESS_WORD_BITS - 1 - get_bit)) & 1;
-			AccessWordType put_data = get_data <<
-				(ACCESS_WORD_BITS - 1 - put_bit);
-			//put_rows[put_y][put_word] = put_rows[put_y][put_word] | put_data;
-			unsigned int put_index = put_y * ACCESS_WORDS + put_word;
-			put_rows_words[put_index] = put_rows_words[put_index] | put_data;
+#if (ACCESS_WORDS == 1)
+	for (unsigned int put_y = 0; put_y < ACCESS_BITS; put_y++) {
+		AccessType put_data_access = ACCESS_ZERO;
+		unsigned int get_x = put_y;
+		for (unsigned int put_x = 0; put_x < ACCESS_BITS; put_x++) {
+			unsigned int get_y = ACCESS_BITS - 1 - put_x;
+#ifdef OPT_GET_CACHE
+			AccessType get_data_access = get_rows[get_y];
+#else
+			AccessType get_data_access =
+				decode(in[(in_y * ACCESS_BITS + get_y) * rowwidth + in_x]);
+#endif // OPT_GET_CACHE
+			AccessType get_data_word = (get_data_access >>
+				(ACCESS_WORD_BITS - 1 - get_x)) & ACCESS_ONE;
+			AccessType put_data_word = get_data_word <<
+				(ACCESS_WORD_BITS - 1 - put_x);
+			put_data_access |= put_data_word;
 		}
-	}*/
-#if (ACCESS_WORDS == 2)
+		out[(out_y * ACCESS_BITS + put_y) * rowwidth + out_x] =
+			encode(put_data_access);
+	}
+#elif (ACCESS_WORDS == 2)
 	AccessType put_rows[ACCESS_BITS];
 	memset(put_rows, 0, ACCESS_BITS * ACCESS_BYTES);
 	for (unsigned int get_y = 0; get_y < ACCESS_WORD_BITS; get_y++) {
 		unsigned int put_x = ACCESS_WORD_BITS - 1 - get_y;
 		AccessType get_data[ACCESS_WORDS];
+		// TODO: Force unroll the following loop (const iterations)
 		for (unsigned int i = 0; i < ACCESS_WORDS; i++) {
 #ifdef OPT_GET_CACHE
 			get_data[i] = get_rows[get_y + (i * ACCESS_WORD_BITS)];
@@ -238,14 +250,18 @@ void rotate_part_atomic(
 		mid_data[1] = shuffle_11_01(get_data[0], get_data[1]);
 		for (unsigned int get_x = 0; get_x < ACCESS_WORD_BITS; get_x++) {
 			unsigned int put_y = get_x;
+			AccessType put_data[ACCESS_WORDS];
+			// TODO: Force unroll the following loop (const iterations)
 			for (unsigned int i = 0; i < ACCESS_WORDS; i++) {
-				AccessType put_data[ACCESS_WORDS];
 				put_data[i] = mid_data[i];
-				put_data[i] = put_data[i] >> (ACCESS_WORD_BITS - 1 - get_x);
+				put_data[i] = put_data[i] >> (AccessIntegers)
+					{(ACCESS_WORD_BITS - 1 - get_x),
+					(ACCESS_WORD_BITS - 1 - get_x)};
 				put_data[i] = put_data[i] & ACCESS_ONE;
-				put_data[i] = put_data[i] << (ACCESS_WORD_BITS - 1 - put_x);
+				put_data[i] = put_data[i] << (AccessIntegers)
+					{(ACCESS_WORD_BITS - 1 - put_x),
+					(ACCESS_WORD_BITS - 1 - put_x)};
 				put_rows[put_y + (i * ACCESS_WORD_BITS)] |= put_data[i];
-				// TODO: Fix: put_data[1] seems to be always wrong (near empty)
 			}
 		}
 	}
@@ -255,12 +271,12 @@ void rotate_part_atomic(
 		/*for (unsigned int x = 0; x < ACCESS_BITS; x++) {
 			unsigned int p_word = x / ACCESS_WORD_BITS;
 			unsigned int p_bit = ACCESS_WORD_BITS - 1 - (x % ACCESS_WORD_BITS);
-			bool p = (out_rows[y][p_word] >> (p_bit)) & 1;
-			putchar(".#"[p]);
+			bool p = (put_rows[put_y][p_word] >> (p_bit)) & 1;
+			putchar("0."[p]);
 		}
 		putchar('\n');*/
 	}
-#else // (ACCESS_WORDS == 2)
+#else // (ACCESS_WORDS == *)
 	for (unsigned int put_y = 0; put_y < ACCESS_BITS; put_y++) {
 		AccessType put_data_access = ACCESS_ZERO;
 		unsigned int get_x = put_y;
@@ -280,13 +296,12 @@ void rotate_part_atomic(
 				(ACCESS_WORD_BITS - 1 - get_bit)) & 1;
 			AccessWordType put_data_word = get_data_word <<
 				(ACCESS_WORD_BITS - 1 - put_bit);
-			put_data_access[put_word] = put_data_access[put_word] |
-				put_data_word;
+			put_data_access[put_word] |= put_data_word;
 		}
 		out[(out_y * ACCESS_BITS + put_y) * rowwidth + out_x] =
 			encode(put_data_access);
 	}
-#endif // (ACCESS_WORDS == 2)
+#endif // (ACCESS_WORDS == *)
 }
 
 static inline void
