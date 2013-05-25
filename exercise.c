@@ -13,19 +13,6 @@
 #include "aim.h"
 
 //#define VARIANT_SIMPLE
-// 1 test1024.pbm 0.011
-#define VARIANT_DNC // Divide aNd Conquer
-// 1 test16384.pbm
-// OMP
-// 1.180
-// 1.051
-// 1.004
-// 0.691
-// 0.489
-// 0.400
-// 0.339
-// 0.148
-
 //#define VARIANT_32
 #define VARIANT_ACCESS
 

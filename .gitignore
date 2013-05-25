@@ -1,2 +1,4 @@
 *-out.pbm
 out.pbm
+statistics.awk
+*.s
