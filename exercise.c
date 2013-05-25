@@ -17,16 +17,16 @@
 #define VARIANT_ACCESS
 
 #define OPT_STRIPS
-#define OPT_STRIPS_HOR (8)
-#define OPT_STRIPS_VER (1)
-//#define OPT_LARGE
+#define OPT_STRIPS_HOR (4)
+#define OPT_STRIPS_VER (2)
+#define OPT_LARGE
 //#define OPT_LARGE_HALF // BROKEN
 #define OPT_LARGE_LINEAR
 #define OPT_OMP_STRIPS_Y
-//#define OPT_OMP_STRIPS_X
+#define OPT_OMP_STRIPS_X
 //#define OPT_OMP_LARGE
-#define OPT_OMP_LARGE_Y
-#define OPT_OMP_LARGE_X
+//#define OPT_OMP_LARGE_Y
+//#define OPT_OMP_LARGE_X
 //#define OPT_OMP_SMALL_Y
 //#define OPT_OMP_SMALL_X
 
@@ -52,11 +52,10 @@
 #ifdef VARIANT_ACCESS
 
 // User defined:
-//typedef uint32_t AccessWordType;
 //#define ACCESS_WORD_BITS (8)
 //#define ACCESS_WORD_BITS (32)
 #define ACCESS_WORD_BITS (64)
-// ACCESS_WORD_BITS must be equal to (sizeof(AccessWordType) / CHAR_BIT)
+// 64 bit numbers perform better on the evaluation machine
 //#define ACCESS_BYTES (2)
 #define ACCESS_BYTES (8)
 //#define ACCESS_BYTES (16)
@@ -380,8 +379,13 @@ void rotate_part_strips(
 	const unsigned int /*in_*/width, const unsigned int /*in_*/height)
 {
 	if (width / OPT_STRIPS_VER < 1 || height / OPT_STRIPS_HOR < 1) { // small
+#ifdef OPT_LARGE
+		rotate_part_large(in, out, rowwidth, in_x, in_y, out_x, out_y,
+			width, height);
+#else // OPT_LARGE (small)
 		rotate_part_small(in, out, rowwidth, in_x, in_y, out_x, out_y,
 			width, height);
+#endif // OPT_LARGE
 	} else { // strips
 		assert(height % OPT_STRIPS_HOR == 0);
 		const unsigned int sub_height = height / OPT_STRIPS_HOR;
