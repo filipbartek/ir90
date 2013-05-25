@@ -26,9 +26,13 @@
 // 0.339
 // 0.148
 
-#define VARIANT_OMP // parallel
 //#define VARIANT_32
 #define VARIANT_ACCESS
+
+#define OPT_LARGE
+#define OPT_OMP_LARGE
+#define OPT_OMP_SMALL_Y
+#define OPT_OMP_SMALL_X
 
 //#define AREA_SMALL_DIM 4096
 // up: too much
@@ -208,12 +212,15 @@ rotate_part_small(
 	const unsigned int out_x, const unsigned int out_y,
 	const unsigned int width, const unsigned int height)
 {
-#ifdef VARIANT_OMP
+#ifdef OPT_OMP_SMALL_Y
 #pragma omp parallel for
-#endif // VARIANT_OMP
+#endif // OPT_OMP_SMALL_Y
 	for (unsigned int y = 0; y < height; y++) {
 		unsigned int sub_in_y = in_y + y;
 		unsigned int sub_out_x = out_x + width - 1 - y;
+#ifdef OPT_OMP_SMALL_X
+#pragma omp parallel for
+#endif // OPT_OMP_SMALL_X
 		for (unsigned int x = 0; x < width; x++) {
 			unsigned int sub_in_x = in_x + x;
 			unsigned int sub_out_y = out_y + x;
@@ -223,6 +230,7 @@ rotate_part_small(
 	}
 }
 
+#ifdef OPT_LARGE
 static void
 rotate_part_large(
 	const AccessType * const restrict in, AccessType * const restrict out,
@@ -240,9 +248,9 @@ rotate_part_large(
 		assert(height % 2 == 0);
 		const unsigned int sub_width = width / 2;
 		const unsigned int sub_height = height / 2;
-#ifdef VARIANT_OMP
+#ifdef OPT_OMP_LARGE
 #pragma omp parallel for
-#endif // VARIANT_OMP
+#endif // OPT_OMP_LARGE
 		for (unsigned int quarter = 0; quarter < 4; quarter++) {
 			unsigned int sub_in_x = 0;
 			unsigned int sub_in_y = 0;
@@ -279,6 +287,7 @@ rotate_part_large(
 		}
 	}
 }
+#endif // OPT_LARGE
 
 #endif // VARIANT_ACCESS
 
@@ -309,8 +318,13 @@ exercise(struct image * restrict in, struct image * restrict out)
 	assert(in->rows % ACCESS_BITS == 0);
 	const unsigned int height_access = in->rows / ACCESS_BITS;
 
+#ifdef OPT_LARGE
+	rotate_part_large(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
+		width_access, height_access);
+#else // OPT_LARGE
 	rotate_part_small(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
 		width_access, height_access);
+#endif // OPT_LARGE
 	// TODO Tweak small / large - divide parts between cores efficiently.
 #endif // VARIANT_ACCESS
 }
