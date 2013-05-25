@@ -129,155 +129,155 @@ static const AccessType ACCESS_ONE = {1, 1, 1, 1};
 static inline __attribute__((hot))
 AccessWordType access_word_decode(const AccessWordType word)
 {
-return access_htobe(word);
+	return access_htobe(word);
 }
 
 static inline __attribute__((hot))
 AccessWordType access_word_encode(const AccessWordType word)
 {
-return access_betoh(word);
+	return access_betoh(word);
 }
 
 static inline __attribute__((hot))
 AccessType decode(const AccessType n)
 {
-AccessType result;
-for (unsigned int i = 0; i < ACCESS_WORDS; i++) {
-result[i] = access_word_decode(n[i]);
-}
-return result;
+	AccessType result;
+	for (unsigned int i = 0; i < ACCESS_WORDS; i++) {
+		result[i] = access_word_decode(n[i]);
+	}
+	return result;
 }
 
 static inline __attribute__((hot))
 AccessType encode(const AccessType n)
 {
-AccessType result;
-for (unsigned int i = 0; i < ACCESS_WORDS; i++) {
-result[i] = access_word_encode(n[i]);
-}
-return result;
+	AccessType result;
+	for (unsigned int i = 0; i < ACCESS_WORDS; i++) {
+		result[i] = access_word_encode(n[i]);
+	}
+	return result;
 }
 
 static inline __attribute__((hot))
 void rotate_part_atomic(
-const AccessType * const restrict in, AccessType * const restrict out,
-const unsigned int rowwidth,
-const unsigned int in_x, const unsigned int in_y,
-const unsigned int out_x, const unsigned int out_y)
+	const AccessType * const restrict in, AccessType * const restrict out,
+	const unsigned int rowwidth,
+	const unsigned int in_x, const unsigned int in_y,
+	const unsigned int out_x, const unsigned int out_y)
 {
-AccessType get_rows[ACCESS_BITS];
-AccessType put_rows[ACCESS_BITS];
-memset(put_rows, 0, ACCESS_BITS * ACCESS_BYTES);
+	AccessType get_rows[ACCESS_BITS];
+	AccessType put_rows[ACCESS_BITS];
+	memset(put_rows, 0, ACCESS_BITS * ACCESS_BYTES);
 
-for (unsigned int y = 0; y < ACCESS_BITS; y++) {
-get_rows[y] = decode(in[(in_y * ACCESS_BITS + y) * rowwidth + in_x]);
-}
-for (unsigned int get_y = 0; get_y < ACCESS_BITS; get_y++) {
-unsigned int put_x = ACCESS_BITS - 1 - get_y;
-unsigned int put_word = put_x / ACCESS_WORD_BITS;
-unsigned int put_bit = put_x % ACCESS_WORD_BITS;
-for (unsigned int get_x = 0; get_x < ACCESS_BITS; get_x++) {
-unsigned int put_y = get_x;
-unsigned int get_word = get_x / ACCESS_WORD_BITS;
-unsigned int get_bit = get_x % ACCESS_WORD_BITS;
-AccessWordType get_data = (get_rows[get_y][get_word] >>
-(ACCESS_WORD_BITS - 1 - get_bit)) & 1;
-AccessWordType put_data = get_data <<
-(ACCESS_WORD_BITS - 1 - put_bit);
-put_rows[put_y][put_word] = put_rows[put_y][put_word] | put_data;
-}
-}
-for (unsigned int put_y = 0; put_y < ACCESS_BITS; put_y++) {
-out[(out_y * ACCESS_BITS + put_y) * rowwidth + out_x] =
-encode(put_rows[put_y]);
-/*for (unsigned int x = 0; x < ACCESS_BITS; x++) {
-unsigned int p_word = x / ACCESS_WORD_BITS;
-unsigned int p_bit = ACCESS_WORD_BITS - 1 - (x % ACCESS_WORD_BITS);
-bool p = (out_rows[y][p_word] >> (p_bit)) & 1;
-putchar(".#"[p]);
-}
-putchar('\n');*/
-}
+	for (unsigned int y = 0; y < ACCESS_BITS; y++) {
+		get_rows[y] = decode(in[(in_y * ACCESS_BITS + y) * rowwidth + in_x]);
+	}
+	for (unsigned int get_y = 0; get_y < ACCESS_BITS; get_y++) {
+		unsigned int put_x = ACCESS_BITS - 1 - get_y;
+		unsigned int put_word = put_x / ACCESS_WORD_BITS;
+		unsigned int put_bit = put_x % ACCESS_WORD_BITS;
+		for (unsigned int get_x = 0; get_x < ACCESS_BITS; get_x++) {
+			unsigned int put_y = get_x;
+			unsigned int get_word = get_x / ACCESS_WORD_BITS;
+			unsigned int get_bit = get_x % ACCESS_WORD_BITS;
+			AccessWordType get_data = (get_rows[get_y][get_word] >>
+				(ACCESS_WORD_BITS - 1 - get_bit)) & 1;
+			AccessWordType put_data = get_data <<
+				(ACCESS_WORD_BITS - 1 - put_bit);
+			put_rows[put_y][put_word] = put_rows[put_y][put_word] | put_data;
+		}
+	}
+	for (unsigned int put_y = 0; put_y < ACCESS_BITS; put_y++) {
+		out[(out_y * ACCESS_BITS + put_y) * rowwidth + out_x] =
+		encode(put_rows[put_y]);
+		/*for (unsigned int x = 0; x < ACCESS_BITS; x++) {
+			unsigned int p_word = x / ACCESS_WORD_BITS;
+			unsigned int p_bit = ACCESS_WORD_BITS - 1 - (x % ACCESS_WORD_BITS);
+			bool p = (out_rows[y][p_word] >> (p_bit)) & 1;
+			putchar(".#"[p]);
+		}
+		putchar('\n');*/
+	}
 }
 
 static inline void
 rotate_part_small(
-const AccessType * const restrict in, AccessType * const restrict out,
-const unsigned int rowwidth,
-const unsigned int in_x, const unsigned int in_y,
-const unsigned int out_x, const unsigned int out_y,
-const unsigned int width, const unsigned int height)
+	const AccessType * const restrict in, AccessType * const restrict out,
+	const unsigned int rowwidth,
+	const unsigned int in_x, const unsigned int in_y,
+	const unsigned int out_x, const unsigned int out_y,
+	const unsigned int width, const unsigned int height)
 {
 #ifdef VARIANT_OMP
 #pragma omp parallel for
 #endif // VARIANT_OMP
-for (unsigned int y = 0; y < height; y++) {
-unsigned int sub_in_y = in_y + y;
-unsigned int sub_out_x = out_x + width - 1 - y;
-for (unsigned int x = 0; x < width; x++) {
-unsigned int sub_in_x = in_x + x;
-unsigned int sub_out_y = out_y + x;
-rotate_part_atomic(in, out, rowwidth, sub_in_x, sub_in_y,
-sub_out_x, sub_out_y);
-}
-}
+	for (unsigned int y = 0; y < height; y++) {
+		unsigned int sub_in_y = in_y + y;
+		unsigned int sub_out_x = out_x + width - 1 - y;
+		for (unsigned int x = 0; x < width; x++) {
+			unsigned int sub_in_x = in_x + x;
+			unsigned int sub_out_y = out_y + x;
+			rotate_part_atomic(in, out, rowwidth, sub_in_x, sub_in_y,
+				sub_out_x, sub_out_y);
+		}
+	}
 }
 
 static void
 rotate_part_large(
-const AccessType * const restrict in, AccessType * const restrict out,
-const unsigned int rowwidth,
-const unsigned int in_x, const unsigned int in_y,
-const unsigned int out_x, const unsigned int out_y,
-const unsigned int width, const unsigned int height)
+	const AccessType * const restrict in, AccessType * const restrict out,
+	const unsigned int rowwidth,
+	const unsigned int in_x, const unsigned int in_y,
+	const unsigned int out_x, const unsigned int out_y,
+	const unsigned int width, const unsigned int height)
 {
-// unsigned int arguments' unit is uint32_t
-if (width * height <= ACCESS_AREA_SMALL) { // small
-rotate_part_small(in, out, rowwidth, in_x, in_y, out_x, out_y,
-width, height);
-} else { // large
-assert(width % 2 == 0);
-assert(height % 2 == 0);
-const unsigned int sub_width = width / 2;
-const unsigned int sub_height = height / 2;
+	// unsigned int arguments' unit is uint32_t
+	if (width * height <= ACCESS_AREA_SMALL) { // small
+		rotate_part_small(in, out, rowwidth, in_x, in_y, out_x, out_y,
+			width, height);
+	} else { // large
+		assert(width % 2 == 0);
+		assert(height % 2 == 0);
+		const unsigned int sub_width = width / 2;
+		const unsigned int sub_height = height / 2;
 #ifdef VARIANT_OMP
 #pragma omp parallel for
 #endif // VARIANT_OMP
-for (unsigned int quarter = 0; quarter < 4; quarter++) {
-unsigned int sub_in_x = 0;
-unsigned int sub_in_y = 0;
-unsigned int sub_out_x = 0;
-unsigned int sub_out_y = 0;
-switch (quarter) {
-case 0:
-sub_in_x = in_x;
-sub_in_y = in_y;
-sub_out_x = out_x + sub_width;
-sub_out_y = out_y;
-break;
-case 1:
-sub_in_x = in_x + sub_width;
-sub_in_y = in_y;
-sub_out_x = out_x + sub_width;
-sub_out_y = out_y + sub_height;
-break;
-case 2:
-sub_in_x = in_x + sub_width;
-sub_in_y = in_y + sub_height;
-sub_out_x = out_x;
-sub_out_y = out_y + sub_height;
-break;
-case 3:
-sub_in_x = in_x;
-sub_in_y = in_y + sub_height;
-sub_out_x = out_x;
-sub_out_y = out_y;
-break;
-}
-rotate_part_large(in, out, rowwidth, sub_in_x, sub_in_y,
-sub_out_x, sub_out_y, sub_width, sub_height);
-}
-}
+		for (unsigned int quarter = 0; quarter < 4; quarter++) {
+			unsigned int sub_in_x = 0;
+			unsigned int sub_in_y = 0;
+			unsigned int sub_out_x = 0;
+			unsigned int sub_out_y = 0;
+			switch (quarter) {
+				case 0:
+					sub_in_x = in_x;
+					sub_in_y = in_y;
+					sub_out_x = out_x + sub_width;
+					sub_out_y = out_y;
+					break;
+				case 1:
+					sub_in_x = in_x + sub_width;
+					sub_in_y = in_y;
+					sub_out_x = out_x + sub_width;
+					sub_out_y = out_y + sub_height;
+					break;
+				case 2:
+					sub_in_x = in_x + sub_width;
+					sub_in_y = in_y + sub_height;
+					sub_out_x = out_x;
+					sub_out_y = out_y + sub_height;
+					break;
+				case 3:
+					sub_in_x = in_x;
+					sub_in_y = in_y + sub_height;
+					sub_out_x = out_x;
+					sub_out_y = out_y;
+					break;
+			}
+			rotate_part_large(in, out, rowwidth, sub_in_x, sub_in_y,
+				sub_out_x, sub_out_y, sub_width, sub_height);
+		}
+	}
 }
 
 #endif // VARIANT_ACCESS
@@ -286,31 +286,31 @@ void
 exercise(struct image * restrict in, struct image * restrict out)
 {
 #ifdef VARIANT_SIMPLE
-for (unsigned int y = 0; y < in->rows; y++) {
-for (unsigned int x = 0; x < in->cols; x++) {
-bool p = image_getpixel(in, x, y);
-image_putpixel(out, in->cols - 1 - y, in->rows - 1 - x, p);
-}
-}
+	for (unsigned int y = 0; y < in->rows; y++) {
+		for (unsigned int x = 0; x < in->cols; x++) {
+			bool p = image_getpixel(in, x, y);
+			image_putpixel(out, in->cols - 1 - y, in->rows - 1 - x, p);
+		}
+	}
 #endif // VARIANT_SIMPLE
 #ifdef VARIANT_ACCESS
-const AccessType * const in_access = (const AccessType * const)in->bitmap;
-AccessType * const out_access = (AccessType * const)out->bitmap;
+	const AccessType * const in_access = (const AccessType * const)in->bitmap;
+	AccessType * const out_access = (AccessType * const)out->bitmap;
 
-assert(image_rowbytes(in) == image_rowbytes(out));
-assert(image_rowbytes(in) % ACCESS_BYTES == 0);
-const unsigned int rowwidth_access = image_rowbytes(in) / ACCESS_BYTES;
+	assert(image_rowbytes(in) == image_rowbytes(out));
+	assert(image_rowbytes(in) % ACCESS_BYTES == 0);
+	const unsigned int rowwidth_access = image_rowbytes(in) / ACCESS_BYTES;
 
-assert(in->cols == out->cols);
-assert(in->cols % ACCESS_BITS == 0);
-const unsigned int width_access = in->cols / ACCESS_BITS;
+	assert(in->cols == out->cols);
+	assert(in->cols % ACCESS_BITS == 0);
+	const unsigned int width_access = in->cols / ACCESS_BITS;
 
-assert(in->rows == out->rows);
-assert(in->rows % ACCESS_BITS == 0);
-const unsigned int height_access = in->rows / ACCESS_BITS;
+	assert(in->rows == out->rows);
+	assert(in->rows % ACCESS_BITS == 0);
+	const unsigned int height_access = in->rows / ACCESS_BITS;
 
-rotate_part_small(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
-width_access, height_access);
-// TODO Tweak small / large - divide parts between cores efficiently.
+	rotate_part_small(in_access, out_access, rowwidth_access, 0, 0, 0, 0,
+		width_access, height_access);
+	// TODO Tweak small / large - divide parts between cores efficiently.
 #endif // VARIANT_ACCESS
 }
